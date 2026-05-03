@@ -608,7 +608,6 @@ function Show-AutoDriveMenu {
             if (-not $useLegacyMenu -and ([Console]::IsInputRedirected -or [Console]::IsOutputRedirected)) {
                 $useLegacyMenu = $true
             }
-            [void][Console]::CursorVisible
         }
         catch {
             $useLegacyMenu = $true
@@ -677,18 +676,18 @@ function Show-AutoDriveMenu {
                     }
                     continue
                 }
-                'D1' { $selectedIndex = 0 }
-                'D2' { $selectedIndex = 1 }
-                'D3' { $selectedIndex = 2 }
-                'D4' { $selectedIndex = 3 }
-                'D5' { $selectedIndex = 4 }
-                'D6' { $selectedIndex = 5 }
-                'NumPad1' { $selectedIndex = 0 }
-                'NumPad2' { $selectedIndex = 1 }
-                'NumPad3' { $selectedIndex = 2 }
-                'NumPad4' { $selectedIndex = 3 }
-                'NumPad5' { $selectedIndex = 4 }
-                'NumPad6' { $selectedIndex = 5 }
+                'D1' { $selectedIndex = 0; continue }
+                'D2' { $selectedIndex = 1; continue }
+                'D3' { $selectedIndex = 2; continue }
+                'D4' { $selectedIndex = 3; continue }
+                'D5' { $selectedIndex = 4; continue }
+                'D6' { $selectedIndex = 5; continue }
+                'NumPad1' { $selectedIndex = 0; continue }
+                'NumPad2' { $selectedIndex = 1; continue }
+                'NumPad3' { $selectedIndex = 2; continue }
+                'NumPad4' { $selectedIndex = 3; continue }
+                'NumPad5' { $selectedIndex = 4; continue }
+                'NumPad6' { $selectedIndex = 5; continue }
                 default {
                     if ($keyInfo.KeyChar -eq 'q' -or $keyInfo.KeyChar -eq 'Q') {
                         $isRunning = $false
@@ -696,14 +695,6 @@ function Show-AutoDriveMenu {
                     }
                     continue
                 }
-            }
-
-            Clear-Host
-            $isRunning = Invoke-AutoDriveMenuAction -Choice $menuItems[$selectedIndex].Key
-            if ($isRunning) {
-                Write-Host ''
-                Write-Host ' Press any key to return to the menu...' -ForegroundColor DarkGray
-                [void][Console]::ReadKey($true)
             }
         }
 

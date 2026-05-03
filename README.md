@@ -69,7 +69,7 @@ This repository deploys GitHub Pages via GitHub Actions with `src/` as the artif
 
 When you run the script, an interactive menu appears with the following options:
 
-- TUI controls: Use Up/Down arrows to navigate, Enter to select, number keys for quick actions, and `Q` to quit.
+- TUI controls: Use Up/Down arrows to navigate, Enter to run the selected option, number keys to jump selection, and `Q` to quit.
 
 ```
 ==============================
