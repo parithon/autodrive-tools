@@ -162,7 +162,7 @@ $comparison = Compare-AutodriveVersions
 Installs the latest AutoDrive mod version and replaces any existing installation.
 
 ```powershell
-# Perform update with confirmation
+# Install, reinstall, or upgrade with confirmation
 Install-AutodriveModVersion
 
 # Preview without making changes
