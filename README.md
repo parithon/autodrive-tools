@@ -8,8 +8,6 @@ A PowerShell-based management tool for the FS25 AutoDrive mod. This suite provid
 - ✅ Check latest available AutoDrive version from GitHub
 - ✅ Compare local vs. latest versions
 - ✅ Download and install updates automatically
-- ✅ Automatic backup before updates
-- ✅ Rollback on update failure
 - ✅ Interactive menu interface
 - ✅ Cross-platform support (Windows & macOS)
 
@@ -69,32 +67,21 @@ This repository deploys GitHub Pages via GitHub Actions with `src/` as the artif
 
 When you run the script, an interactive menu appears with the following options:
 
-- TUI controls: Use Up/Down arrows to navigate, Enter to run the selected option, number keys to jump selection, and `Q` to quit.
+- TUI layout: Menu/actions are shown on the left and local/remote mod status is shown on the right.
+- TUI controls: Use Up/Down arrows to navigate, Enter to run the selected option, number keys to jump selection, `R` to refresh status, and `Q` to quit.
 
 ```
 ==============================
    FS25 AutoDrive Manager     
 ==============================
- [1] Check local version
- [2] Check latest version
- [3] Compare local vs latest
- [4] Install latest version
- [5] Preview install (WhatIf)
- [6] Remove local mod
+ [1] Install latest version
+ [2] Remove local mod
  [Q] Quit
 ```
 
-**Option 1 - Check Local Version**: Displays the currently installed AutoDrive version and its location
+**Option 1 - Install**: Downloads and installs the latest version. If a version already exists, it is replaced.
 
-**Option 2 - Check Latest Version**: Fetches the latest available version from the official GitHub repository
-
-**Option 3 - Compare Versions**: Shows side-by-side comparison of local and latest versions with update status
-
-**Option 4 - Install**: Downloads and installs the latest version. If a version already exists, a backup is created before replacing it.
-
-**Option 5 - Preview Install**: Shows what actions would be performed without making any changes (WhatIf mode)
-
-**Option 6 - Remove Local Mod**: Removes the local AutoDrive installation from your mods folder.
+**Option 2 - Remove Local Mod**: Removes the local AutoDrive installation from your mods folder.
 
 ### Programmatic Usage
 
@@ -172,7 +159,7 @@ $comparison = Compare-AutodriveVersions
 ```
 
 ### Install-AutodriveModVersion
-Installs the latest AutoDrive mod version and replaces any existing installation with automatic backup.
+Installs the latest AutoDrive mod version and replaces any existing installation.
 
 ```powershell
 # Perform update with confirmation
@@ -219,7 +206,7 @@ The scripts implement robust error handling:
 - **API Errors**: GitHub API errors are caught and reported with helpful messages
 - **Rate Limiting**: Special handling for GitHub API rate limit (403) errors
 - **File I/O Errors**: File operations include proper error recovery
-- **Update Failures**: Automatic rollback on update failure with backup restoration
+- **Update Failures**: Failed installs are reported clearly and do not create backup artifacts
 
 ## Platform Support
 
@@ -255,7 +242,7 @@ GitHub has rate limits for unauthenticated API requests. Wait a few moments and 
 Ensure AutoDrive is properly installed in your Farming Simulator mods folder. The script searches recursively through the mods directory.
 
 ### Update fails
-Check your internet connection. If the update fails, the previous version will be automatically restored from backup.
+Check your internet connection. Re-run the install option after fixing connectivity or permission issues.
 
 ### Permission denied errors
 Ensure you have write permissions to your Farming Simulator mods directory.

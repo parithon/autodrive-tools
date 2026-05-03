@@ -475,6 +475,29 @@ Describe 'Install-AutodriveModVersion' {
             Mock Compare-AutodriveVersions {
                 return $mockComparison
             }
+            Mock Get-LatestAutodriveVersion {
+                return [PSCustomObject]@{
+                    Version      = [System.Version]'1.5.0'
+                    ReleaseDate  = [datetime]'2024-01-15'
+                    DownloadUrl  = 'https://example.invalid/FS25_AutoDrive-1.5.0.zip'
+                    IsPreRelease = $false
+                }
+            }
+            Mock Get-LocalAutodriveVersion {
+                return [PSCustomObject]@{
+                    IsInstalled = $false
+                    Version     = $null
+                    ModPath     = $null
+                    ModDescPath = $null
+                }
+            }
+            Mock Get-FarmingSimulatorModsPath {
+                return '/tmp/mods'
+            }
+            Mock Invoke-WebRequest
+            Mock Test-Path { return $false }
+            Mock Remove-Item
+            Mock Move-Item
             Mock Write-Host
         }
 
@@ -498,6 +521,29 @@ Describe 'Install-AutodriveModVersion' {
             Mock Compare-AutodriveVersions {
                 return $mockComparison
             }
+            Mock Get-LatestAutodriveVersion {
+                return [PSCustomObject]@{
+                    Version      = [System.Version]'1.5.0'
+                    ReleaseDate  = [datetime]'2024-01-15'
+                    DownloadUrl  = 'https://example.invalid/FS25_AutoDrive-1.5.0.zip'
+                    IsPreRelease = $false
+                }
+            }
+            Mock Get-LocalAutodriveVersion {
+                return [PSCustomObject]@{
+                    IsInstalled = $true
+                    Version     = [System.Version]'1.5.0'
+                    ModPath     = '/tmp/mods/FS25_AutoDrive.zip'
+                    ModDescPath = '/tmp/mods/FS25_AutoDrive.zip::modDesc.xml'
+                }
+            }
+            Mock Get-FarmingSimulatorModsPath {
+                return '/tmp/mods'
+            }
+            Mock Invoke-WebRequest
+            Mock Test-Path { return $false }
+            Mock Remove-Item
+            Mock Move-Item
             Mock Write-Host
         }
 
@@ -512,6 +558,13 @@ Describe 'Install-AutodriveModVersion' {
             Mock Compare-AutodriveVersions {
                 return $null
             }
+            Mock Get-LatestAutodriveVersion
+            Mock Get-LocalAutodriveVersion
+            Mock Get-FarmingSimulatorModsPath
+            Mock Invoke-WebRequest
+            Mock Test-Path
+            Mock Remove-Item
+            Mock Move-Item
             Mock Write-Host
         }
 
@@ -596,7 +649,7 @@ Describe 'Show-AutoDriveMenu' {
         }
     }
 
-    Context 'When user checks local version' {
+    Context 'When user selects install latest version' {
         BeforeEach {
             Mock Read-Host {
                 if ($callCount -eq 1) {
@@ -606,74 +659,13 @@ Describe 'Show-AutoDriveMenu' {
                 return 'Q'
             }
             Mock Write-Host
-            Mock Get-LocalAutodriveVersion {
-                return [PSCustomObject]@{
-                    IsInstalled = $true
-                    Version     = [System.Version]'1.4.5'
-                    ModPath     = 'C:\Mods\FS25_AutoDrive'
-                    ModDescPath = 'C:\Mods\FS25_AutoDrive\modDesc.xml'
-                }
-            }
+            Mock Install-AutodriveModVersion
             $script:callCount = 1
         }
 
-        It 'Should display local version' {
+        It 'Should call Install-AutodriveModVersion' {
             Show-AutoDriveMenu
-            Should -Invoke Get-LocalAutodriveVersion
-        }
-    }
-
-    Context 'When user checks latest version' {
-        BeforeEach {
-            Mock Read-Host {
-                if ($callCount -eq 1) {
-                    $script:callCount = 2
-                    return '2'
-                }
-                return 'Q'
-            }
-            Mock Write-Host
-            Mock Get-LatestAutodriveVersion {
-                return [PSCustomObject]@{
-                    Version      = [System.Version]'1.5.0'
-                    ReleaseDate  = [datetime]'2024-01-15'
-                    DownloadUrl  = 'https://github.com/releases/download/v1.5.0/FS25_AutoDrive-1.5.0.zip'
-                    IsPreRelease = $false
-                }
-            }
-            $script:callCount = 1
-        }
-
-        It 'Should display latest version' {
-            Show-AutoDriveMenu
-            Should -Invoke Get-LatestAutodriveVersion
-        }
-    }
-
-    Context 'When user compares versions' {
-        BeforeEach {
-            Mock Read-Host {
-                if ($callCount -eq 1) {
-                    $script:callCount = 2
-                    return '3'
-                }
-                return 'Q'
-            }
-            Mock Write-Host
-            Mock Compare-AutodriveVersions {
-                return [PSCustomObject]@{
-                    LocalVersion    = [System.Version]'1.4.5'
-                    LatestVersion   = [System.Version]'1.5.0'
-                    UpdateAvailable = $true
-                    IsInstalled     = $true
-                }
-            }
-            $script:callCount = 1
-        }
-
-        It 'Should call Compare-AutodriveVersions' {
-            Show-AutoDriveMenu
-            Should -Invoke Compare-AutodriveVersions
+            Should -Invoke Install-AutodriveModVersion -Exactly 1
         }
     }
 
@@ -703,7 +695,7 @@ Describe 'Show-AutoDriveMenu' {
             Mock Read-Host {
                 if ($callCount -eq 1) {
                     $script:callCount = 2
-                    return '6'
+                    return '2'
                 }
                 return 'Q'
             }
