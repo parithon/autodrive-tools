@@ -599,12 +599,25 @@ function Show-AutoDriveMenu {
             }
             catch {
             }
-            if ($consoleWidth -lt 90) { $consoleWidth = 90 }
+            if ($consoleWidth -lt 1) { $consoleWidth = 120 }
 
-            $leftWidth = [Math]::Floor($consoleWidth * 0.48)
-            if ($leftWidth -lt 36) { $leftWidth = 36 }
-            $rightWidth = $consoleWidth - $leftWidth - 3
-            if ($rightWidth -lt 30) { $rightWidth = 30 }
+            if ($consoleWidth -ge 90) {
+                $leftWidth = [Math]::Floor($consoleWidth * 0.48)
+                if ($leftWidth -lt 36) { $leftWidth = 36 }
+                $rightWidth = $consoleWidth - $leftWidth - 3
+                if ($rightWidth -lt 30) {
+                    $rightWidth = 30
+                    $leftWidth = $consoleWidth - $rightWidth - 3
+                }
+            }
+            else {
+                $leftWidth = [Math]::Max([Math]::Floor(($consoleWidth - 3) * 0.48), 20)
+                $rightWidth = $consoleWidth - $leftWidth - 3
+                if ($rightWidth -lt 10) {
+                    $rightWidth = 10
+                    $leftWidth = [Math]::Max($consoleWidth - $rightWidth - 3, 10)
+                }
+            }
 
             $leftLines = @(
                 'FS25 AutoDrive Manager'
