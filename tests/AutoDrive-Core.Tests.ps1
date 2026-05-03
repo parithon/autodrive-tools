@@ -460,7 +460,7 @@ Describe 'Compare-AutodriveVersions' {
     }
 }
 
-Describe 'Update-AutodriveModVersion' {
+Describe 'Install-AutodriveModVersion' {
     Context 'When mod is not installed' {
         BeforeAll {
             $mockComparison = [PSCustomObject]@{
@@ -479,7 +479,7 @@ Describe 'Update-AutodriveModVersion' {
         }
 
         It 'Should return early when not installed' {
-            Update-AutodriveModVersion
+            Install-AutodriveModVersion
             Should -Invoke Compare-AutodriveVersions -Exactly 1
         }
     }
@@ -502,7 +502,7 @@ Describe 'Update-AutodriveModVersion' {
         }
 
         It 'Should indicate already up to date' {
-            Update-AutodriveModVersion
+            Install-AutodriveModVersion
             Should -Invoke Compare-AutodriveVersions -Exactly 1
         }
     }
@@ -516,7 +516,7 @@ Describe 'Update-AutodriveModVersion' {
         }
 
         It 'Should exit gracefully on comparison failure' {
-            Update-AutodriveModVersion
+            Install-AutodriveModVersion
             Should -Invoke Compare-AutodriveVersions -Exactly 1
         }
     }

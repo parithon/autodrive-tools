@@ -346,43 +346,34 @@ function Compare-AutodriveVersions {
 
 <#
 .SYNOPSIS
-Updates the AutoDrive mod to the latest version from GitHub.
+Installs the latest AutoDrive mod version from GitHub.
 
 .DESCRIPTION
-Checks for available updates, backs up the current installation, downloads the latest
-version from GitHub, and installs it. Includes rollback capability if the update fails.
+Downloads and installs the latest AutoDrive release zip from GitHub.
+If AutoDrive is already installed, the existing version is backed up and replaced.
+Includes rollback capability if installation fails.
 
 .PARAMETER WhatIf
-Shows what would happen if the update was performed without making changes.
+Shows what would happen if the install was performed without making changes.
 
 .EXAMPLE
-Update-AutodriveModVersion
+Install-AutodriveModVersion
 
 .EXAMPLE
-Update-AutodriveModVersion -WhatIf
+Install-AutodriveModVersion -WhatIf
 
 .NOTES
-Creates a timestamped backup before updating. Requires internet connectivity.
+Creates a timestamped backup before replacing an existing install. Requires internet connectivity.
 #>
-function Update-AutodriveModVersion {
+function Install-AutodriveModVersion {
     [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
     param()
 
     process {
-        Write-Verbose 'Starting AutoDrive mod update process'
+        Write-Verbose 'Starting AutoDrive mod install process'
         $comparison = Compare-AutodriveVersions
         if (-not $comparison) {
             Write-Verbose 'Version comparison failed'
-            return
-        }
-
-        if (-not $comparison.IsInstalled) {
-            Write-Host "`n  AutoDrive is not installed. Nothing to update." -ForegroundColor Yellow
-            return
-        }
-
-        if (-not $comparison.UpdateAvailable) {
-            Write-Host "`n  You already have the latest version ($($comparison.LocalVersion))." -ForegroundColor Green
             return
         }
 
@@ -394,21 +385,27 @@ function Update-AutodriveModVersion {
         $zipPath = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath "FS25_AutoDrive_$($latest.Version).zip"
         $installZipPath = Join-Path -Path $modsPath -ChildPath 'FS25_AutoDrive.zip'
 
-        if (Test-Path -Path $local.ModPath -PathType Leaf) {
+        if ($comparison.IsInstalled -and (Test-Path -Path $local.ModPath -PathType Leaf)) {
             $backupPath = "$backupPath.zip"
         }
 
-        if ($PSCmdlet.ShouldProcess('AutoDrive', 'Update to latest version')) {
+        if ($PSCmdlet.ShouldProcess('AutoDrive', 'Install latest version')) {
             try {
-                Write-Host "`n  Backing up current mod..." -ForegroundColor Cyan
-                Copy-Item -Path $local.ModPath -Destination $backupPath -Recurse -Force -ErrorAction Stop
-                Write-Host "  Backup saved to: $backupPath" -ForegroundColor Gray
+                if ($comparison.IsInstalled) {
+                    Write-Host "`n  Existing install detected: $($comparison.LocalVersion)" -ForegroundColor Yellow
+                    Write-Host '  Backing up current mod...' -ForegroundColor Cyan
+                    Copy-Item -Path $local.ModPath -Destination $backupPath -Recurse -Force -ErrorAction Stop
+                    Write-Host "  Backup saved to: $backupPath" -ForegroundColor Gray
+
+                    Write-Host '  Removing existing version...' -ForegroundColor Cyan
+                    Remove-Item -Path $local.ModPath -Recurse -Force -ErrorAction Stop
+                }
+                else {
+                    Write-Host "`n  No existing AutoDrive install found. Proceeding with fresh install..." -ForegroundColor Yellow
+                }
 
                 Write-Host "  Downloading v$($latest.Version)..." -ForegroundColor Cyan
                 Invoke-WebRequest -Uri $latest.DownloadUrl -OutFile $zipPath -ErrorAction Stop
-
-                Write-Host '  Removing old version...' -ForegroundColor Cyan
-                Remove-Item -Path $local.ModPath -Recurse -Force -ErrorAction Stop
 
                 Write-Host '  Installing new version as zip...' -ForegroundColor Cyan
                 if (Test-Path -Path $installZipPath) {
@@ -418,11 +415,11 @@ function Update-AutodriveModVersion {
 
                 Remove-Item -Path $zipPath -Force -ErrorAction SilentlyContinue
 
-                Write-Host "`n  Successfully updated AutoDrive to v$($latest.Version)!" -ForegroundColor Green
-                Write-Verbose 'AutoDrive update completed successfully'
+                Write-Host "`n  Successfully installed AutoDrive v$($latest.Version)!" -ForegroundColor Green
+                Write-Verbose 'AutoDrive install completed successfully'
             }
             catch {
-                Write-Error "Update failed: $_"
+                Write-Error "Install failed: $_"
                 if (Test-Path -Path $backupPath) {
                     Write-Host '  Restoring backup...' -ForegroundColor Yellow
                     if (Test-Path -Path $installZipPath) {
@@ -445,7 +442,7 @@ Displays an interactive menu for managing the FS25 AutoDrive mod.
 
 .DESCRIPTION
 Shows a menu-driven interface that allows users to check local and latest versions,
-compare versions, and update the AutoDrive mod to the latest release.
+compare versions, and install the latest AutoDrive release.
 
 .EXAMPLE
 Show-AutoDriveMenu
@@ -466,8 +463,8 @@ function Show-AutoDriveMenu {
             Write-Host ' [1] Check local version'
             Write-Host ' [2] Check latest version'
             Write-Host ' [3] Compare local vs latest'
-            Write-Host ' [4] Update to latest version'
-            Write-Host ' [5] Preview update (WhatIf)'
+            Write-Host ' [4] Install latest version'
+            Write-Host ' [5] Preview install (WhatIf)'
             Write-Host ' [Q] Quit'
             Write-Host '------------------------------' -ForegroundColor DarkCyan
             $choice = Read-Host ' Select an option'
@@ -506,10 +503,10 @@ function Show-AutoDriveMenu {
                     }
                 }
                 '4' {
-                    Update-AutodriveModVersion
+                    Install-AutodriveModVersion
                 }
                 '5' {
-                    Update-AutodriveModVersion -WhatIf
+                    Install-AutodriveModVersion -WhatIf
                 }
                 'Q' { }
                 default {

@@ -1,6 +1,6 @@
 # AutoDrive Tools
 
-A PowerShell-based management tool for the FS25 AutoDrive mod. This suite provides utilities to check, compare, and update the AutoDrive mod for Farming Simulator 2025.
+A PowerShell-based management tool for the FS25 AutoDrive mod. This suite provides utilities to check, compare, and install the AutoDrive mod for Farming Simulator 2025.
 
 ## Features
 
@@ -76,8 +76,8 @@ When you run the script, an interactive menu appears with the following options:
  [1] Check local version
  [2] Check latest version
  [3] Compare local vs latest
- [4] Update to latest version
- [5] Preview update (WhatIf)
+ [4] Install latest version
+ [5] Preview install (WhatIf)
  [Q] Quit
 ```
 
@@ -87,9 +87,9 @@ When you run the script, an interactive menu appears with the following options:
 
 **Option 3 - Compare Versions**: Shows side-by-side comparison of local and latest versions with update status
 
-**Option 4 - Update**: Downloads and installs the latest version. A backup of the current installation is created before updating.
+**Option 4 - Install**: Downloads and installs the latest version. If a version already exists, a backup is created before replacing it.
 
-**Option 5 - Preview Update**: Shows what actions would be performed without making any changes (WhatIf mode)
+**Option 5 - Preview Install**: Shows what actions would be performed without making any changes (WhatIf mode)
 
 ### Programmatic Usage
 
@@ -166,15 +166,15 @@ $comparison = Compare-AutodriveVersions
 # Returns: LocalVersion, LatestVersion, UpdateAvailable, IsInstalled
 ```
 
-### Update-AutodriveModVersion
-Updates the AutoDrive mod to the latest version with automatic backup.
+### Install-AutodriveModVersion
+Installs the latest AutoDrive mod version and replaces any existing installation with automatic backup.
 
 ```powershell
 # Perform update with confirmation
-Update-AutodriveModVersion
+Install-AutodriveModVersion
 
 # Preview without making changes
-Update-AutodriveModVersion -WhatIf
+Install-AutodriveModVersion -WhatIf
 ```
 
 ### Show-AutoDriveMenu
