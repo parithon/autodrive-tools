@@ -101,6 +101,8 @@ function Compare-AutodriveVersions {
 }
 
 function Update-AutodriveModVersion {
+    param([switch]$WhatIf)
+
     $comparison = Compare-AutodriveVersions
     if (-not $comparison) { return }
 
@@ -120,6 +122,22 @@ function Update-AutodriveModVersion {
     $timestamp  = Get-Date -Format 'yyyyMMdd_HHmmss'
     $backupPath = Join-Path $modsPath "FS25_AutoDrive_backup_$timestamp"
     $zipPath    = Join-Path ([System.IO.Path]::GetTempPath()) "FS25_AutoDrive_$($latest.Version).zip"
+
+    if ($WhatIf) {
+        Write-Host "`n  [WhatIf] The following actions would be performed:" -ForegroundColor Magenta
+        Write-Host "`n  1. Back up current mod" -ForegroundColor White
+        Write-Host "       From : $($local.ModPath)" -ForegroundColor Gray
+        Write-Host "       To   : $backupPath" -ForegroundColor Gray
+        Write-Host "`n  2. Download latest release" -ForegroundColor White
+        Write-Host "       URL  : $($latest.DownloadUrl)" -ForegroundColor Gray
+        Write-Host "       Save : $zipPath" -ForegroundColor Gray
+        Write-Host "`n  3. Remove old version" -ForegroundColor White
+        Write-Host "       Path : $($local.ModPath)" -ForegroundColor Gray
+        Write-Host "`n  4. Extract new version" -ForegroundColor White
+        Write-Host "       Into : $modsPath" -ForegroundColor Gray
+        Write-Host "`n  No changes were made. Run option [4] to perform the update." -ForegroundColor Magenta
+        return
+    }
 
     try {
         Write-Host "`n  Backing up current mod..." -ForegroundColor Cyan
@@ -160,6 +178,7 @@ function Show-AutoDriveMenu {
         Write-Host ' [2] Check latest version'
         Write-Host ' [3] Compare local vs latest'
         Write-Host ' [4] Update to latest version'
+        Write-Host ' [5] Preview update (WhatIf)'
         Write-Host ' [Q] Quit'
         Write-Host '------------------------------' -ForegroundColor DarkCyan
         $choice = Read-Host ' Select an option'
@@ -199,6 +218,9 @@ function Show-AutoDriveMenu {
             }
             '4' {
                 Update-AutodriveModVersion
+            }
+            '5' {
+                Update-AutodriveModVersion -WhatIf
             }
             'Q' { }
             default { Write-Host "`n  Invalid option. Please try again." -ForegroundColor Red }
