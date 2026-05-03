@@ -28,7 +28,8 @@ function Get-FarmingSimulatorModsPath {
     process {
         if ($IsWindows -or $env:OS -eq 'Windows_NT') {
             Write-Verbose 'Detected Windows operating system'
-            return Join-Path -Path $env:USERPROFILE -ChildPath 'Documents' -AdditionalChildPath 'My Games', 'FarmingSimulator2025', 'mods'
+            $documentsPath = [Environment]::GetFolderPath('MyDocuments')
+            return Join-Path -Path $documentsPath -ChildPath 'My Games' -AdditionalChildPath 'FarmingSimulator2025', 'mods'
         }
         elseif ($IsMacOS) {
             Write-Verbose 'Detected macOS operating system'
@@ -42,6 +43,82 @@ function Get-FarmingSimulatorModsPath {
                 $null
             )
             $PSCmdlet.ThrowTerminatingError($errorRecord)
+        }
+    }
+}
+
+<#
+.SYNOPSIS
+Changes the Farming Simulator 2025 mods directory to a new location and symlinks the original path.
+
+.DESCRIPTION
+Moves the existing mods directory contents to a new path, then creates a symbolic link (or
+junction on Windows) at the original path pointing to the new location. This allows Farming
+Simulator to continue finding mods at the expected path while the actual data lives elsewhere.
+
+.PARAMETER NewPath
+The new directory path where mods should be stored.
+
+.EXAMPLE
+Set-FarmingSimulatorModsPath -NewPath 'D:\FS25\mods'
+
+.NOTES
+On Windows, a directory junction is used so that administrator privileges are not required.
+If the original path is already a junction/symlink, it is replaced.
+#>
+function Set-FarmingSimulatorModsPath {
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$NewPath
+    )
+
+    process {
+        $defaultPath = Get-FarmingSimulatorModsPath
+        $NewPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($NewPath)
+
+        if ($defaultPath -eq $NewPath) {
+            Write-Host "`n  The new path is the same as the current path. No changes made." -ForegroundColor Yellow
+            return
+        }
+
+        $defaultItem = Get-Item -Path $defaultPath -Force -ErrorAction SilentlyContinue
+        $isSymlink = $defaultItem -and $defaultItem.LinkType -eq 'Junction'
+
+        if ($PSCmdlet.ShouldProcess($defaultPath, "Create junction pointing to '$NewPath'")) {
+            try {
+                if (-not (Test-Path -Path $NewPath)) {
+                    New-Item -ItemType Directory -Path $NewPath -Force -ErrorAction Stop | Out-Null
+                    Write-Verbose "Created new mods directory: $NewPath"
+                }
+
+                if ((Test-Path -Path $defaultPath) -and -not $isSymlink) {
+                    Write-Host '  Moving existing mods to new location...' -ForegroundColor Cyan
+                    Get-ChildItem -Path $defaultPath -Force | ForEach-Object {
+                        Move-Item -Path $_.FullName -Destination $NewPath -Force -ErrorAction Stop
+                    }
+                    Remove-Item -Path $defaultPath -Force -ErrorAction Stop
+                    Write-Verbose "Moved existing mods from $defaultPath to $NewPath"
+                }
+                elseif ($isSymlink) {
+                    Remove-Item -Path $defaultPath -Force -ErrorAction Stop
+                    Write-Verbose "Removed existing junction: $defaultPath"
+                }
+
+                $defaultParent = Split-Path -Path $defaultPath -Parent
+                if (-not (Test-Path -Path $defaultParent)) {
+                    New-Item -ItemType Directory -Path $defaultParent -Force -ErrorAction Stop | Out-Null
+                }
+
+                New-Item -ItemType Junction -Path $defaultPath -Target $NewPath -ErrorAction Stop | Out-Null
+                Write-Host "`n  Junction created: $defaultPath" -ForegroundColor Green
+                Write-Host "              --> $NewPath" -ForegroundColor Green
+                Write-Verbose 'Mods path junction created successfully'
+            }
+            catch {
+                Write-Error "Failed to change mods path: $_"
+            }
         }
     }
 }
@@ -459,11 +536,48 @@ function Remove-AutodriveMod {
     }
 }
 
+function Invoke-ChangeModsPath {
+    [CmdletBinding()]
+    param()
+
+    process {
+        $currentPath = Get-FarmingSimulatorModsPath
+        $currentItem = Get-Item -Path $currentPath -Force -ErrorAction SilentlyContinue
+        $isJunction = $currentItem -and $currentItem.LinkType -eq 'Junction'
+
+        Write-Host ''
+        Write-Host "  Current mods path: $currentPath" -ForegroundColor Cyan
+        if ($isJunction) {
+            Write-Host "  (This path is a junction pointing to another location)" -ForegroundColor DarkGray
+        }
+        Write-Host ''
+
+        try {
+            [Console]::CursorVisible = $true
+        }
+        catch { }
+
+        $newPath = Read-Host '  Enter new mods path (leave blank to cancel)'
+
+        try {
+            [Console]::CursorVisible = $false
+        }
+        catch { }
+
+        if ([string]::IsNullOrWhiteSpace($newPath)) {
+            Write-Host "`n  No changes made." -ForegroundColor Yellow
+            return
+        }
+
+        Set-FarmingSimulatorModsPath -NewPath $newPath.Trim() -Confirm:$false
+    }
+}
+
 function Invoke-AutoDriveMenuAction {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [ValidateSet('1', '2', 'Q')]
+        [ValidateSet('1', '2', '3', 'R', 'Q')]
         [string]$Choice
     )
 
@@ -474,6 +588,13 @@ function Invoke-AutoDriveMenuAction {
         }
         '2' {
             Remove-AutodriveMod -Confirm:$false
+            return $true
+        }
+        '3' {
+            Invoke-ChangeModsPath
+            return $true
+        }
+        'R' {
             return $true
         }
         'Q' {
@@ -488,10 +609,12 @@ function Get-AutoDriveStatusSnapshot {
 
     $local = Get-LocalAutodriveVersion 2>$null
     $latest = Get-LatestAutodriveVersion 2>$null
+    $modsPath = Get-FarmingSimulatorModsPath 2>$null
 
     return [PSCustomObject]@{
-        Local  = $local
-        Latest = $latest
+        Local     = $local
+        Latest    = $latest
+        ModsPath  = $modsPath
     }
 }
 
@@ -506,12 +629,14 @@ function Show-AutoDriveMenuLegacy {
         Write-Host '==============================' -ForegroundColor DarkCyan
         Write-Host ' [1] Install latest version'
         Write-Host ' [2] Remove local mod'
+        Write-Host ' [3] Change mods path'
+        Write-Host ' [R] Refresh status'
         Write-Host ' [Q] Quit'
         Write-Host '------------------------------' -ForegroundColor DarkCyan
         $choice = Read-Host ' Select an option'
 
         $normalized = $choice.Trim().ToUpper()
-        if ($normalized -notin @('1', '2', 'Q')) {
+        if ($normalized -notin @('1', '2', '3', 'R', 'Q')) {
             Write-Host "`n  Invalid option. Please try again." -ForegroundColor Red
             continue
         }
@@ -570,6 +695,8 @@ function Show-AutoDriveMenu {
         $menuItems = @(
             [PSCustomObject]@{ Key = '1'; Label = 'Install latest version' }
             [PSCustomObject]@{ Key = '2'; Label = 'Remove local mod' }
+            [PSCustomObject]@{ Key = '3'; Label = 'Change mods path' }
+            [PSCustomObject]@{ Key = 'R'; Label = 'Refresh status' }
             [PSCustomObject]@{ Key = 'Q'; Label = 'Quit' }
         )
 
@@ -621,7 +748,7 @@ function Show-AutoDriveMenu {
 
             $leftLines = @(
                 'FS25 AutoDrive Manager'
-                'Controls: Up/Down move, Enter run, 1-2 select, R refresh, Q quit'
+                'Controls: Up/Down move, Enter run, 1-3 select, R refresh, Q quit'
                 ''
             )
             for ($i = 0; $i -lt $menuItems.Count; $i++) {
@@ -635,10 +762,17 @@ function Show-AutoDriveMenu {
             }
 
             $localStatus = 'Not installed'
-            $localPath = '-'
             if ($statusSnapshot -and $statusSnapshot.Local -and $statusSnapshot.Local.IsInstalled) {
                 $localStatus = "Installed ($($statusSnapshot.Local.Version))"
-                $localPath = $statusSnapshot.Local.ModPath
+            }
+
+            $modsSearchPath = '-'
+            if ($statusSnapshot -and $statusSnapshot.ModsPath) {
+                $modsSearchPath = $statusSnapshot.ModsPath
+                $modsPathItem = Get-Item -Path $modsSearchPath -Force -ErrorAction SilentlyContinue
+                if ($modsPathItem -and $modsPathItem.LinkType -eq 'Junction') {
+                    $modsSearchPath += ' [junction]'
+                }
             }
 
             $latestStatus = 'Unavailable'
@@ -666,10 +800,10 @@ function Show-AutoDriveMenu {
                 $updatedAtText = $statusLastUpdated.ToString('HH:mm:ss')
             }
 
-            $pathLabelPrefix = 'Path:   '
+            $pathLabelPrefix = 'Mods:   '
             $pathContinuationPrefix = '        '
             $pathLines = @()
-            $remainingPath = [string]$localPath
+            $remainingPath = [string]$modsSearchPath
 
             $firstChunkWidth = [Math]::Max(1, $rightWidth - $pathLabelPrefix.Length)
             if ($remainingPath.Length -le $firstChunkWidth) {
@@ -691,11 +825,12 @@ function Show-AutoDriveMenu {
                 'Current Status'
                 "Last refresh: $updatedAtText"
                 ''
-                "Local:  $localStatus"
             )
 
             $rightLines += $pathLines
             $rightLines += @(
+                ''
+                "Local:  $localStatus"
                 ''
                 "Remote: $latestStatus"
                 "Date:   $releaseDate"
@@ -733,10 +868,10 @@ function Show-AutoDriveMenu {
                     $selectedKey = $menuItems[$selectedIndex].Key
                     Clear-Host
                     $isRunning = Invoke-AutoDriveMenuAction -Choice $selectedKey
-                    if ($isRunning -and $selectedKey -in @('1', '2')) {
+                    if ($isRunning -and $selectedKey -in @('1', '2', '3', 'R')) {
                         $needsStatusRefresh = $true
                     }
-                    if ($isRunning) {
+                    if ($isRunning -and $selectedKey -notin @('R', '3')) {
                         Write-Host ''
                         Write-Host ' Press any key to return to the menu...' -ForegroundColor DarkGray
                         [void][Console]::ReadKey($true)
@@ -745,8 +880,10 @@ function Show-AutoDriveMenu {
                 }
                 'D1' { $selectedIndex = 0; continue }
                 'D2' { $selectedIndex = 1; continue }
+                'D3' { $selectedIndex = 2; continue }
                 'NumPad1' { $selectedIndex = 0; continue }
                 'NumPad2' { $selectedIndex = 1; continue }
+                'NumPad3' { $selectedIndex = 2; continue }
                 default {
                     if ($keyInfo.KeyChar -eq 'q' -or $keyInfo.KeyChar -eq 'Q') {
                         $isRunning = $false
