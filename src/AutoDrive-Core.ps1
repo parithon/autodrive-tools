@@ -150,7 +150,7 @@ function Get-LatestAutodriveVersion {
             }
         }
         catch {
-            Write-Error -ErrorRecord $_
+            Write-Verbose "Failed to fetch latest version: $_"
             return $null
         }
     }
@@ -284,7 +284,7 @@ function Get-LocalAutodriveVersion {
             }
         }
         catch {
-            Write-Error "Failed to read local mod: $_"
+            Write-Verbose "Failed to read local mod: $_"
             return $null
         }
     }
@@ -324,11 +324,11 @@ function Compare-AutodriveVersions {
         $local = Get-LocalAutodriveVersion
 
         if (-not $latest) {
-            Write-Error 'Could not retrieve latest version.'
+            Write-Verbose 'Could not retrieve latest version.'
             return $null
         }
         if (-not $local) {
-            Write-Error 'Could not determine local version.'
+            Write-Verbose 'Could not determine local version.'
             return $null
         }
 
@@ -437,7 +437,7 @@ function Remove-AutodriveMod {
         Write-Verbose 'Starting local AutoDrive removal process'
         $local = Get-LocalAutodriveVersion
         if (-not $local) {
-            Write-Error 'Could not determine local AutoDrive installation state.'
+            Write-Verbose 'Could not determine local AutoDrive installation state.'
             return
         }
 
