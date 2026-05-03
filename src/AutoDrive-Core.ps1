@@ -346,69 +346,55 @@ function Compare-AutodriveVersions {
 
 <#
 .SYNOPSIS
-Updates the AutoDrive mod to the latest version from GitHub.
+Installs the latest AutoDrive mod version from GitHub.
 
 .DESCRIPTION
-Checks for available updates, backs up the current installation, downloads the latest
-version from GitHub, and installs it. Includes rollback capability if the update fails.
+Downloads and installs the latest AutoDrive release zip from GitHub.
+If AutoDrive is already installed, the existing version is replaced.
 
 .PARAMETER WhatIf
-Shows what would happen if the update was performed without making changes.
+Shows what would happen if the install was performed without making changes.
 
 .EXAMPLE
-Update-AutodriveModVersion
+Install-AutodriveModVersion
 
 .EXAMPLE
-Update-AutodriveModVersion -WhatIf
+Install-AutodriveModVersion -WhatIf
 
 .NOTES
-Creates a timestamped backup before updating. Requires internet connectivity.
+Requires internet connectivity.
 #>
-function Update-AutodriveModVersion {
+function Install-AutodriveModVersion {
     [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
     param()
 
     process {
-        Write-Verbose 'Starting AutoDrive mod update process'
+        Write-Verbose 'Starting AutoDrive mod install process'
         $comparison = Compare-AutodriveVersions
         if (-not $comparison) {
             Write-Verbose 'Version comparison failed'
             return
         }
 
-        if (-not $comparison.IsInstalled) {
-            Write-Host "`n  AutoDrive is not installed. Nothing to update." -ForegroundColor Yellow
-            return
-        }
-
-        if (-not $comparison.UpdateAvailable) {
-            Write-Host "`n  You already have the latest version ($($comparison.LocalVersion))." -ForegroundColor Green
-            return
-        }
-
         $latest = Get-LatestAutodriveVersion
         $local = Get-LocalAutodriveVersion
         $modsPath = Get-FarmingSimulatorModsPath
-        $timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
-        $backupPath = Join-Path -Path $modsPath -ChildPath "FS25_AutoDrive_backup_$timestamp"
         $zipPath = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath "FS25_AutoDrive_$($latest.Version).zip"
         $installZipPath = Join-Path -Path $modsPath -ChildPath 'FS25_AutoDrive.zip'
 
-        if (Test-Path -Path $local.ModPath -PathType Leaf) {
-            $backupPath = "$backupPath.zip"
-        }
-
-        if ($PSCmdlet.ShouldProcess('AutoDrive', 'Update to latest version')) {
+        if ($PSCmdlet.ShouldProcess('AutoDrive', 'Install latest version')) {
             try {
-                Write-Host "`n  Backing up current mod..." -ForegroundColor Cyan
-                Copy-Item -Path $local.ModPath -Destination $backupPath -Recurse -Force -ErrorAction Stop
-                Write-Host "  Backup saved to: $backupPath" -ForegroundColor Gray
-
                 Write-Host "  Downloading v$($latest.Version)..." -ForegroundColor Cyan
                 Invoke-WebRequest -Uri $latest.DownloadUrl -OutFile $zipPath -ErrorAction Stop
 
-                Write-Host '  Removing old version...' -ForegroundColor Cyan
-                Remove-Item -Path $local.ModPath -Recurse -Force -ErrorAction Stop
+                if ($comparison.IsInstalled) {
+                    Write-Host "`n  Existing install detected: $($comparison.LocalVersion)" -ForegroundColor Yellow
+                    Write-Host '  Removing existing version...' -ForegroundColor Cyan
+                    Remove-Item -Path $local.ModPath -Recurse -Force -ErrorAction Stop
+                }
+                else {
+                    Write-Host "`n  No existing AutoDrive install found. Proceeding with fresh install..." -ForegroundColor Yellow
+                }
 
                 Write-Host '  Installing new version as zip...' -ForegroundColor Cyan
                 if (Test-Path -Path $installZipPath) {
@@ -418,22 +404,12 @@ function Update-AutodriveModVersion {
 
                 Remove-Item -Path $zipPath -Force -ErrorAction SilentlyContinue
 
-                Write-Host "`n  Successfully updated AutoDrive to v$($latest.Version)!" -ForegroundColor Green
-                Write-Verbose 'AutoDrive update completed successfully'
+                Write-Host "`n  Successfully installed AutoDrive v$($latest.Version)!" -ForegroundColor Green
+                Write-Verbose 'AutoDrive install completed successfully'
             }
             catch {
-                Write-Error "Update failed: $_"
-                if (Test-Path -Path $backupPath) {
-                    Write-Host '  Restoring backup...' -ForegroundColor Yellow
-                    if (Test-Path -Path $installZipPath) {
-                        Remove-Item -Path $installZipPath -Recurse -Force -ErrorAction SilentlyContinue
-                    }
-                    if (Test-Path -Path $local.ModPath) {
-                        Remove-Item -Path $local.ModPath -Recurse -Force -ErrorAction SilentlyContinue
-                    }
-                    Copy-Item -Path $backupPath -Destination $local.ModPath -Recurse -Force -ErrorAction SilentlyContinue
-                    Write-Host '  Backup restored.' -ForegroundColor Green
-                }
+                Write-Error "Install failed: $_"
+                Remove-Item -Path $zipPath -Force -ErrorAction SilentlyContinue
             }
         }
     }
@@ -441,11 +417,121 @@ function Update-AutodriveModVersion {
 
 <#
 .SYNOPSIS
+Removes the locally installed AutoDrive mod.
+
+.DESCRIPTION
+Deletes the local AutoDrive installation from the Farming Simulator mods folder.
+Supports both extracted-folder and zip-file installs.
+
+.EXAMPLE
+Remove-AutodriveMod
+
+.NOTES
+This action only affects the local mod installation.
+#>
+function Remove-AutodriveMod {
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
+    param()
+
+    process {
+        Write-Verbose 'Starting local AutoDrive removal process'
+        $local = Get-LocalAutodriveVersion
+        if (-not $local) {
+            Write-Error 'Could not determine local AutoDrive installation state.'
+            return
+        }
+
+        if (-not $local.IsInstalled) {
+            Write-Host "`n  AutoDrive is not installed. Nothing to remove." -ForegroundColor Yellow
+            return
+        }
+
+        if ($PSCmdlet.ShouldProcess($local.ModPath, 'Remove local AutoDrive mod')) {
+            try {
+                Remove-Item -Path $local.ModPath -Recurse -Force -ErrorAction Stop
+                Write-Host "`n  Successfully removed AutoDrive from local mods folder." -ForegroundColor Green
+                Write-Verbose 'Local AutoDrive removal completed successfully'
+            }
+            catch {
+                Write-Error "Removal failed: $_"
+            }
+        }
+    }
+}
+
+function Invoke-AutoDriveMenuAction {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateSet('1', '2', 'Q')]
+        [string]$Choice
+    )
+
+    switch ($Choice) {
+        '1' {
+            Install-AutodriveModVersion -Confirm:$false
+            return $true
+        }
+        '2' {
+            Remove-AutodriveMod -Confirm:$false
+            return $true
+        }
+        'Q' {
+            return $false
+        }
+    }
+}
+
+function Get-AutoDriveStatusSnapshot {
+    [CmdletBinding()]
+    param()
+
+    $local = Get-LocalAutodriveVersion 2>$null
+    $latest = Get-LatestAutodriveVersion 2>$null
+
+    return [PSCustomObject]@{
+        Local  = $local
+        Latest = $latest
+    }
+}
+
+function Show-AutoDriveMenuLegacy {
+    [CmdletBinding()]
+    param()
+
+    do {
+        Write-Host ''
+        Write-Host '==============================' -ForegroundColor DarkCyan
+        Write-Host '   FS25 AutoDrive Manager     ' -ForegroundColor Cyan
+        Write-Host '==============================' -ForegroundColor DarkCyan
+        Write-Host ' [1] Install latest version'
+        Write-Host ' [2] Remove local mod'
+        Write-Host ' [Q] Quit'
+        Write-Host '------------------------------' -ForegroundColor DarkCyan
+        $choice = Read-Host ' Select an option'
+
+        $normalized = $choice.Trim().ToUpper()
+        if ($normalized -notin @('1', '2', 'Q')) {
+            Write-Host "`n  Invalid option. Please try again." -ForegroundColor Red
+            continue
+        }
+
+        $continue = Invoke-AutoDriveMenuAction -Choice $normalized
+        if (-not $continue) {
+            break
+        }
+    } while ($true)
+
+    Write-Host ''
+}
+
+<#
+.SYNOPSIS
 Displays an interactive menu for managing the FS25 AutoDrive mod.
 
 .DESCRIPTION
-Shows a menu-driven interface that allows users to check local and latest versions,
-compare versions, and update the AutoDrive mod to the latest release.
+Shows a keyboard-driven terminal UI with arrow-key navigation and hotkeys.
+Falls back to a standard prompt menu when TUI input is unavailable.
 
 .EXAMPLE
 Show-AutoDriveMenu
@@ -458,65 +544,228 @@ function Show-AutoDriveMenu {
     param()
 
     process {
-        do {
-            Write-Host ''
-            Write-Host '==============================' -ForegroundColor DarkCyan
-            Write-Host '   FS25 AutoDrive Manager     ' -ForegroundColor Cyan
-            Write-Host '==============================' -ForegroundColor DarkCyan
-            Write-Host ' [1] Check local version'
-            Write-Host ' [2] Check latest version'
-            Write-Host ' [3] Compare local vs latest'
-            Write-Host ' [4] Update to latest version'
-            Write-Host ' [5] Preview update (WhatIf)'
-            Write-Host ' [Q] Quit'
-            Write-Host '------------------------------' -ForegroundColor DarkCyan
-            $choice = Read-Host ' Select an option'
+        $useLegacyMenu = $false
+        $legacyMenuEnv = $env:AUTODRIVE_USE_LEGACY_MENU
+        if ($legacyMenuEnv) {
+            $normalizedLegacyValue = $legacyMenuEnv.Trim().ToLowerInvariant()
+            if ($normalizedLegacyValue -in @('1', 'true', 'yes', 'on')) {
+                $useLegacyMenu = $true
+            }
+        }
 
-            switch ($choice.Trim().ToUpper()) {
-                '1' {
-                    $v = Get-LocalAutodriveVersion
-                    if ($v -and $v.IsInstalled) {
-                        Write-Host "`n  Installed Version : $($v.Version)" -ForegroundColor Green
-                        Write-Host "  Mod Path          : $($v.ModPath)" -ForegroundColor Gray
-                    }
-                    else {
-                        Write-Host "`n  AutoDrive is not installed in your mods folder." -ForegroundColor Yellow
-                        Write-Host "  Mods folder: $(Get-FarmingSimulatorModsPath)" -ForegroundColor Gray
-                    }
-                }
-                '2' {
-                    $v = Get-LatestAutodriveVersion
-                    if ($v) {
-                        Write-Host "`n  Latest Version : $($v.Version)" -ForegroundColor Green
-                        Write-Host "  Released       : $($v.ReleaseDate.ToString('yyyy-MM-dd'))" -ForegroundColor Gray
-                        Write-Host "  Pre-release    : $($v.IsPreRelease)" -ForegroundColor Gray
-                    }
-                }
-                '3' {
-                    $c = Compare-AutodriveVersions
-                    if ($c) {
-                        Write-Host "`n  Local Version  : $($c.LocalVersion)" -ForegroundColor $(if ($c.IsInstalled) { 'White' } else { 'Yellow' })
-                        Write-Host "  Latest Version : $($c.LatestVersion)" -ForegroundColor White
-                        if ($c.UpdateAvailable) {
-                            Write-Host "  Status         : Update available!" -ForegroundColor Yellow
-                        }
-                        else {
-                            Write-Host "  Status         : Up to date" -ForegroundColor Green
-                        }
-                    }
-                }
-                '4' {
-                    Update-AutodriveModVersion
-                }
-                '5' {
-                    Update-AutodriveModVersion -WhatIf
-                }
-                'Q' { }
-                default {
-                    Write-Host "`n  Invalid option. Please try again." -ForegroundColor Red
+        try {
+            if (-not $useLegacyMenu -and ([Console]::IsInputRedirected -or [Console]::IsOutputRedirected)) {
+                $useLegacyMenu = $true
+            }
+        }
+        catch {
+            $useLegacyMenu = $true
+        }
+
+        if ($useLegacyMenu) {
+            Show-AutoDriveMenuLegacy
+            return
+        }
+
+        $menuItems = @(
+            [PSCustomObject]@{ Key = '1'; Label = 'Install latest version' }
+            [PSCustomObject]@{ Key = '2'; Label = 'Remove local mod' }
+            [PSCustomObject]@{ Key = 'Q'; Label = 'Quit' }
+        )
+
+        $selectedIndex = 0
+        $isRunning = $true
+        $statusSnapshot = $null
+        $statusLastUpdated = $null
+        $needsStatusRefresh = $true
+
+        try {
+            [Console]::CursorVisible = $false
+        }
+        catch {
+        }
+
+        while ($isRunning) {
+            if ($needsStatusRefresh) {
+                $statusSnapshot = Get-AutoDriveStatusSnapshot
+                $statusLastUpdated = Get-Date
+                $needsStatusRefresh = $false
+            }
+
+            Clear-Host
+            $consoleWidth = 120
+            try {
+                $consoleWidth = [Console]::WindowWidth
+            }
+            catch {
+            }
+            if ($consoleWidth -lt 1) { $consoleWidth = 120 }
+
+            if ($consoleWidth -ge 90) {
+                $leftWidth = [Math]::Floor($consoleWidth * 0.48)
+                if ($leftWidth -lt 36) { $leftWidth = 36 }
+                $rightWidth = $consoleWidth - $leftWidth - 3
+                if ($rightWidth -lt 30) {
+                    $rightWidth = 30
+                    $leftWidth = $consoleWidth - $rightWidth - 3
                 }
             }
-        } while ($choice.Trim().ToUpper() -ne 'Q')
+            else {
+                $leftWidth = [Math]::Max([Math]::Floor(($consoleWidth - 3) * 0.48), 20)
+                $rightWidth = $consoleWidth - $leftWidth - 3
+                if ($rightWidth -lt 10) {
+                    $rightWidth = 10
+                    $leftWidth = [Math]::Max($consoleWidth - $rightWidth - 3, 10)
+                }
+            }
+
+            $leftLines = @(
+                'FS25 AutoDrive Manager'
+                'Controls: Up/Down move, Enter run, 1-2 select, R refresh, Q quit'
+                ''
+            )
+            for ($i = 0; $i -lt $menuItems.Count; $i++) {
+                $item = $menuItems[$i]
+                if ($i -eq $selectedIndex) {
+                    $leftLines += ("> [$($item.Key)] $($item.Label)")
+                }
+                else {
+                    $leftLines += ("  [$($item.Key)] $($item.Label)")
+                }
+            }
+
+            $localStatus = 'Not installed'
+            $localPath = '-'
+            if ($statusSnapshot -and $statusSnapshot.Local -and $statusSnapshot.Local.IsInstalled) {
+                $localStatus = "Installed ($($statusSnapshot.Local.Version))"
+                $localPath = $statusSnapshot.Local.ModPath
+            }
+
+            $latestStatus = 'Unavailable'
+            $releaseDate = '-'
+            if ($statusSnapshot -and $statusSnapshot.Latest) {
+                $latestStatus = "v$($statusSnapshot.Latest.Version)"
+                $releaseDate = $statusSnapshot.Latest.ReleaseDate.ToString('yyyy-MM-dd')
+            }
+
+            $updateStatus = '-'
+            if ($statusSnapshot -and $statusSnapshot.Local -and $statusSnapshot.Local.IsInstalled -and $statusSnapshot.Latest) {
+                if ($statusSnapshot.Local.Version -lt $statusSnapshot.Latest.Version) {
+                    $updateStatus = 'Update available'
+                }
+                else {
+                    $updateStatus = 'Up to date'
+                }
+            }
+            elseif ($statusSnapshot -and $statusSnapshot.Local -and -not $statusSnapshot.Local.IsInstalled -and $statusSnapshot.Latest) {
+                $updateStatus = 'Ready to install'
+            }
+
+            $updatedAtText = '-'
+            if ($statusLastUpdated) {
+                $updatedAtText = $statusLastUpdated.ToString('HH:mm:ss')
+            }
+
+            $pathLabelPrefix = 'Path:   '
+            $pathContinuationPrefix = '        '
+            $pathLines = @()
+            $remainingPath = [string]$localPath
+
+            $firstChunkWidth = [Math]::Max(1, $rightWidth - $pathLabelPrefix.Length)
+            if ($remainingPath.Length -le $firstChunkWidth) {
+                $pathLines += ($pathLabelPrefix + $remainingPath)
+            }
+            else {
+                $pathLines += ($pathLabelPrefix + $remainingPath.Substring(0, $firstChunkWidth))
+                $remainingPath = $remainingPath.Substring($firstChunkWidth)
+
+                $nextChunkWidth = [Math]::Max(1, $rightWidth - $pathContinuationPrefix.Length)
+                while ($remainingPath.Length -gt 0) {
+                    $takeLength = [Math]::Min($nextChunkWidth, $remainingPath.Length)
+                    $pathLines += ($pathContinuationPrefix + $remainingPath.Substring(0, $takeLength))
+                    $remainingPath = $remainingPath.Substring($takeLength)
+                }
+            }
+
+            $rightLines = @(
+                'Current Status'
+                "Last refresh: $updatedAtText"
+                ''
+                "Local:  $localStatus"
+            )
+
+            $rightLines += $pathLines
+            $rightLines += @(
+                ''
+                "Remote: $latestStatus"
+                "Date:   $releaseDate"
+                "State:  $updateStatus"
+            )
+
+            $maxLines = [Math]::Max($leftLines.Count, $rightLines.Count)
+            for ($lineIndex = 0; $lineIndex -lt $maxLines; $lineIndex++) {
+                $leftText = if ($lineIndex -lt $leftLines.Count) { $leftLines[$lineIndex] } else { '' }
+                $rightText = if ($lineIndex -lt $rightLines.Count) { $rightLines[$lineIndex] } else { '' }
+
+                if ($leftText.Length -gt $leftWidth) { $leftText = $leftText.Substring(0, $leftWidth) }
+                if ($rightText.Length -gt $rightWidth) { $rightText = $rightText.Substring(0, $rightWidth) }
+
+                $composedLine = $leftText.PadRight($leftWidth) + ' | ' + $rightText
+                if ($lineIndex -ge 3 -and $lineIndex -lt (3 + $menuItems.Count) -and (($lineIndex - 3) -eq $selectedIndex)) {
+                    Write-Host $composedLine -ForegroundColor Cyan
+                }
+                else {
+                    Write-Host $composedLine
+                }
+            }
+
+            $keyInfo = [Console]::ReadKey($true)
+            switch ($keyInfo.Key) {
+                'UpArrow' {
+                    $selectedIndex = ($selectedIndex - 1 + $menuItems.Count) % $menuItems.Count
+                    continue
+                }
+                'DownArrow' {
+                    $selectedIndex = ($selectedIndex + 1) % $menuItems.Count
+                    continue
+                }
+                'Enter' {
+                    $selectedKey = $menuItems[$selectedIndex].Key
+                    Clear-Host
+                    $isRunning = Invoke-AutoDriveMenuAction -Choice $selectedKey
+                    if ($isRunning -and $selectedKey -in @('1', '2')) {
+                        $needsStatusRefresh = $true
+                    }
+                    if ($isRunning) {
+                        Write-Host ''
+                        Write-Host ' Press any key to return to the menu...' -ForegroundColor DarkGray
+                        [void][Console]::ReadKey($true)
+                    }
+                    continue
+                }
+                'D1' { $selectedIndex = 0; continue }
+                'D2' { $selectedIndex = 1; continue }
+                'NumPad1' { $selectedIndex = 0; continue }
+                'NumPad2' { $selectedIndex = 1; continue }
+                default {
+                    if ($keyInfo.KeyChar -eq 'q' -or $keyInfo.KeyChar -eq 'Q') {
+                        $isRunning = $false
+                        continue
+                    }
+                    if ($keyInfo.KeyChar -eq 'r' -or $keyInfo.KeyChar -eq 'R') {
+                        $needsStatusRefresh = $true
+                        continue
+                    }
+                    continue
+                }
+            }
+        }
+
+        try {
+            [Console]::CursorVisible = $true
+        }
+        catch {
+        }
 
         Write-Host ''
     }

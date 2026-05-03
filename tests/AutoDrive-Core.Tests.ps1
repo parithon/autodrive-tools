@@ -460,7 +460,7 @@ Describe 'Compare-AutodriveVersions' {
     }
 }
 
-Describe 'Update-AutodriveModVersion' {
+Describe 'Install-AutodriveModVersion' {
     Context 'When mod is not installed' {
         BeforeAll {
             $mockComparison = [PSCustomObject]@{
@@ -475,11 +475,34 @@ Describe 'Update-AutodriveModVersion' {
             Mock Compare-AutodriveVersions {
                 return $mockComparison
             }
+            Mock Get-LatestAutodriveVersion {
+                return [PSCustomObject]@{
+                    Version      = [System.Version]'1.5.0'
+                    ReleaseDate  = [datetime]'2024-01-15'
+                    DownloadUrl  = 'https://example.invalid/FS25_AutoDrive-1.5.0.zip'
+                    IsPreRelease = $false
+                }
+            }
+            Mock Get-LocalAutodriveVersion {
+                return [PSCustomObject]@{
+                    IsInstalled = $false
+                    Version     = $null
+                    ModPath     = $null
+                    ModDescPath = $null
+                }
+            }
+            Mock Get-FarmingSimulatorModsPath {
+                return '/tmp/mods'
+            }
+            Mock Invoke-WebRequest
+            Mock Test-Path { return $false }
+            Mock Remove-Item
+            Mock Move-Item
             Mock Write-Host
         }
 
         It 'Should return early when not installed' {
-            Update-AutodriveModVersion
+            Install-AutodriveModVersion -Confirm:$false
             Should -Invoke Compare-AutodriveVersions -Exactly 1
         }
     }
@@ -498,11 +521,34 @@ Describe 'Update-AutodriveModVersion' {
             Mock Compare-AutodriveVersions {
                 return $mockComparison
             }
+            Mock Get-LatestAutodriveVersion {
+                return [PSCustomObject]@{
+                    Version      = [System.Version]'1.5.0'
+                    ReleaseDate  = [datetime]'2024-01-15'
+                    DownloadUrl  = 'https://example.invalid/FS25_AutoDrive-1.5.0.zip'
+                    IsPreRelease = $false
+                }
+            }
+            Mock Get-LocalAutodriveVersion {
+                return [PSCustomObject]@{
+                    IsInstalled = $true
+                    Version     = [System.Version]'1.5.0'
+                    ModPath     = '/tmp/mods/FS25_AutoDrive.zip'
+                    ModDescPath = '/tmp/mods/FS25_AutoDrive.zip::modDesc.xml'
+                }
+            }
+            Mock Get-FarmingSimulatorModsPath {
+                return '/tmp/mods'
+            }
+            Mock Invoke-WebRequest
+            Mock Test-Path { return $false }
+            Mock Remove-Item
+            Mock Move-Item
             Mock Write-Host
         }
 
         It 'Should indicate already up to date' {
-            Update-AutodriveModVersion
+            Install-AutodriveModVersion -Confirm:$false
             Should -Invoke Compare-AutodriveVersions -Exactly 1
         }
     }
@@ -512,17 +558,83 @@ Describe 'Update-AutodriveModVersion' {
             Mock Compare-AutodriveVersions {
                 return $null
             }
+            Mock Get-LatestAutodriveVersion
+            Mock Get-LocalAutodriveVersion
+            Mock Get-FarmingSimulatorModsPath
+            Mock Invoke-WebRequest
+            Mock Test-Path
+            Mock Remove-Item
+            Mock Move-Item
             Mock Write-Host
         }
 
         It 'Should exit gracefully on comparison failure' {
-            Update-AutodriveModVersion
+            Install-AutodriveModVersion -Confirm:$false
             Should -Invoke Compare-AutodriveVersions -Exactly 1
         }
     }
 }
 
+Describe 'Remove-AutodriveMod' {
+    Context 'When mod is not installed' {
+        BeforeEach {
+            Mock Get-LocalAutodriveVersion {
+                return [PSCustomObject]@{
+                    IsInstalled = $false
+                    Version     = $null
+                    ModPath     = $null
+                    ModDescPath = $null
+                }
+            }
+            Mock Remove-Item
+            Mock Write-Host
+        }
+
+        It 'Should indicate nothing to remove' {
+            Remove-AutodriveMod -Confirm:$false
+            Should -Invoke Get-LocalAutodriveVersion -Exactly 1
+            Should -Invoke Remove-Item -Exactly 0
+        }
+    }
+
+    Context 'When mod is installed' {
+        BeforeEach {
+            Mock Get-LocalAutodriveVersion {
+                return [PSCustomObject]@{
+                    IsInstalled = $true
+                    Version     = [System.Version]'1.5.0'
+                    ModPath     = '/tmp/mods/FS25_AutoDrive.zip'
+                    ModDescPath = '/tmp/mods/FS25_AutoDrive.zip::modDesc.xml'
+                }
+            }
+            Mock Remove-Item
+            Mock Write-Host
+        }
+
+        It 'Should remove the local mod path' {
+            Remove-AutodriveMod -Confirm:$false
+            Should -Invoke Remove-Item -Exactly 1 -ParameterFilter {
+                $Path -eq '/tmp/mods/FS25_AutoDrive.zip' -and $Recurse -and $Force
+            }
+        }
+    }
+}
+
 Describe 'Show-AutoDriveMenu' {
+    BeforeAll {
+        $script:originalLegacyMenuEnv = $env:AUTODRIVE_USE_LEGACY_MENU
+        $env:AUTODRIVE_USE_LEGACY_MENU = '1'
+    }
+
+    AfterAll {
+        if ($null -eq $script:originalLegacyMenuEnv) {
+            Remove-Item Env:AUTODRIVE_USE_LEGACY_MENU -ErrorAction SilentlyContinue
+        }
+        else {
+            $env:AUTODRIVE_USE_LEGACY_MENU = $script:originalLegacyMenuEnv
+        }
+    }
+
     Context 'When user selects quit immediately' {
         BeforeEach {
             Mock Read-Host {
@@ -537,7 +649,7 @@ Describe 'Show-AutoDriveMenu' {
         }
     }
 
-    Context 'When user checks local version' {
+    Context 'When user selects install latest version' {
         BeforeEach {
             Mock Read-Host {
                 if ($callCount -eq 1) {
@@ -547,74 +659,13 @@ Describe 'Show-AutoDriveMenu' {
                 return 'Q'
             }
             Mock Write-Host
-            Mock Get-LocalAutodriveVersion {
-                return [PSCustomObject]@{
-                    IsInstalled = $true
-                    Version     = [System.Version]'1.4.5'
-                    ModPath     = 'C:\Mods\FS25_AutoDrive'
-                    ModDescPath = 'C:\Mods\FS25_AutoDrive\modDesc.xml'
-                }
-            }
+            Mock Install-AutodriveModVersion
             $script:callCount = 1
         }
 
-        It 'Should display local version' {
+        It 'Should call Install-AutodriveModVersion' {
             Show-AutoDriveMenu
-            Should -Invoke Get-LocalAutodriveVersion
-        }
-    }
-
-    Context 'When user checks latest version' {
-        BeforeEach {
-            Mock Read-Host {
-                if ($callCount -eq 1) {
-                    $script:callCount = 2
-                    return '2'
-                }
-                return 'Q'
-            }
-            Mock Write-Host
-            Mock Get-LatestAutodriveVersion {
-                return [PSCustomObject]@{
-                    Version      = [System.Version]'1.5.0'
-                    ReleaseDate  = [datetime]'2024-01-15'
-                    DownloadUrl  = 'https://github.com/releases/download/v1.5.0/FS25_AutoDrive-1.5.0.zip'
-                    IsPreRelease = $false
-                }
-            }
-            $script:callCount = 1
-        }
-
-        It 'Should display latest version' {
-            Show-AutoDriveMenu
-            Should -Invoke Get-LatestAutodriveVersion
-        }
-    }
-
-    Context 'When user compares versions' {
-        BeforeEach {
-            Mock Read-Host {
-                if ($callCount -eq 1) {
-                    $script:callCount = 2
-                    return '3'
-                }
-                return 'Q'
-            }
-            Mock Write-Host
-            Mock Compare-AutodriveVersions {
-                return [PSCustomObject]@{
-                    LocalVersion    = [System.Version]'1.4.5'
-                    LatestVersion   = [System.Version]'1.5.0'
-                    UpdateAvailable = $true
-                    IsInstalled     = $true
-                }
-            }
-            $script:callCount = 1
-        }
-
-        It 'Should call Compare-AutodriveVersions' {
-            Show-AutoDriveMenu
-            Should -Invoke Compare-AutodriveVersions
+            Should -Invoke Install-AutodriveModVersion -Exactly 1
         }
     }
 
@@ -636,6 +687,26 @@ Describe 'Show-AutoDriveMenu' {
             Should -Invoke Write-Host -ParameterFilter {
                 $Object -like '*Invalid option*'
             }
+        }
+    }
+
+    Context 'When user selects remove local mod' {
+        BeforeEach {
+            Mock Read-Host {
+                if ($callCount -eq 1) {
+                    $script:callCount = 2
+                    return '2'
+                }
+                return 'Q'
+            }
+            Mock Write-Host
+            Mock Remove-AutodriveMod
+            $script:callCount = 1
+        }
+
+        It 'Should call Remove-AutodriveMod' {
+            Show-AutoDriveMenu
+            Should -Invoke Remove-AutodriveMod -Exactly 1
         }
     }
 }
