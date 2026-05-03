@@ -69,6 +69,8 @@ This repository deploys GitHub Pages via GitHub Actions with `src/` as the artif
 
 When you run the script, an interactive menu appears with the following options:
 
+- TUI controls: Use Up/Down arrows to navigate, Enter to select, number keys for quick actions, and `Q` to quit.
+
 ```
 ==============================
    FS25 AutoDrive Manager     
@@ -78,6 +80,7 @@ When you run the script, an interactive menu appears with the following options:
  [3] Compare local vs latest
  [4] Install latest version
  [5] Preview install (WhatIf)
+ [6] Remove local mod
  [Q] Quit
 ```
 
@@ -90,6 +93,8 @@ When you run the script, an interactive menu appears with the following options:
 **Option 4 - Install**: Downloads and installs the latest version. If a version already exists, a backup is created before replacing it.
 
 **Option 5 - Preview Install**: Shows what actions would be performed without making any changes (WhatIf mode)
+
+**Option 6 - Remove Local Mod**: Removes the local AutoDrive installation from your mods folder.
 
 ### Programmatic Usage
 
@@ -175,6 +180,13 @@ Install-AutodriveModVersion
 
 # Preview without making changes
 Install-AutodriveModVersion -WhatIf
+```
+
+### Remove-AutodriveMod
+Removes the locally installed AutoDrive mod.
+
+```powershell
+Remove-AutodriveMod
 ```
 
 ### Show-AutoDriveMenu

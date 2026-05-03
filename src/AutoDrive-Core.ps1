@@ -385,7 +385,7 @@ function Install-AutodriveModVersion {
         $zipPath = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath "FS25_AutoDrive_$($latest.Version).zip"
         $installZipPath = Join-Path -Path $modsPath -ChildPath 'FS25_AutoDrive.zip'
 
-        if ($comparison.IsInstalled -and (Test-Path -Path $local.ModPath -PathType Leaf)) {
+        if ($comparison.IsInstalled -and $local -and $local.ModPath -and (Test-Path -Path $local.ModPath -PathType Leaf)) {
             $backupPath = "$backupPath.zip"
         }
 
@@ -438,11 +438,151 @@ function Install-AutodriveModVersion {
 
 <#
 .SYNOPSIS
+Removes the locally installed AutoDrive mod.
+
+.DESCRIPTION
+Deletes the local AutoDrive installation from the Farming Simulator mods folder.
+Supports both extracted-folder and zip-file installs.
+
+.EXAMPLE
+Remove-AutodriveMod
+
+.NOTES
+This action only affects the local mod installation.
+#>
+function Remove-AutodriveMod {
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
+    param()
+
+    process {
+        Write-Verbose 'Starting local AutoDrive removal process'
+        $local = Get-LocalAutodriveVersion
+        if (-not $local) {
+            Write-Error 'Could not determine local AutoDrive installation state.'
+            return
+        }
+
+        if (-not $local.IsInstalled) {
+            Write-Host "`n  AutoDrive is not installed. Nothing to remove." -ForegroundColor Yellow
+            return
+        }
+
+        if ($PSCmdlet.ShouldProcess($local.ModPath, 'Remove local AutoDrive mod')) {
+            try {
+                Remove-Item -Path $local.ModPath -Recurse -Force -ErrorAction Stop
+                Write-Host "`n  Successfully removed AutoDrive from local mods folder." -ForegroundColor Green
+                Write-Verbose 'Local AutoDrive removal completed successfully'
+            }
+            catch {
+                Write-Error "Removal failed: $_"
+            }
+        }
+    }
+}
+
+function Invoke-AutoDriveMenuAction {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateSet('1', '2', '3', '4', '5', '6', 'Q')]
+        [string]$Choice
+    )
+
+    switch ($Choice) {
+        '1' {
+            $v = Get-LocalAutodriveVersion
+            if ($v -and $v.IsInstalled) {
+                Write-Host "`n  Installed Version : $($v.Version)" -ForegroundColor Green
+                Write-Host "  Mod Path          : $($v.ModPath)" -ForegroundColor Gray
+            }
+            else {
+                Write-Host "`n  AutoDrive is not installed in your mods folder." -ForegroundColor Yellow
+                Write-Host "  Mods folder: $(Get-FarmingSimulatorModsPath)" -ForegroundColor Gray
+            }
+            return $true
+        }
+        '2' {
+            $v = Get-LatestAutodriveVersion
+            if ($v) {
+                Write-Host "`n  Latest Version : $($v.Version)" -ForegroundColor Green
+                Write-Host "  Released       : $($v.ReleaseDate.ToString('yyyy-MM-dd'))" -ForegroundColor Gray
+                Write-Host "  Pre-release    : $($v.IsPreRelease)" -ForegroundColor Gray
+            }
+            return $true
+        }
+        '3' {
+            $c = Compare-AutodriveVersions
+            if ($c) {
+                Write-Host "`n  Local Version  : $($c.LocalVersion)" -ForegroundColor $(if ($c.IsInstalled) { 'White' } else { 'Yellow' })
+                Write-Host "  Latest Version : $($c.LatestVersion)" -ForegroundColor White
+                if ($c.UpdateAvailable) {
+                    Write-Host '  Status         : Update available!' -ForegroundColor Yellow
+                }
+                else {
+                    Write-Host '  Status         : Up to date' -ForegroundColor Green
+                }
+            }
+            return $true
+        }
+        '4' {
+            Install-AutodriveModVersion -Confirm:$false
+            return $true
+        }
+        '5' {
+            Install-AutodriveModVersion -WhatIf -Confirm:$false
+            return $true
+        }
+        '6' {
+            Remove-AutodriveMod -Confirm:$false
+            return $true
+        }
+        'Q' {
+            return $false
+        }
+    }
+}
+
+function Show-AutoDriveMenuLegacy {
+    [CmdletBinding()]
+    param()
+
+    do {
+        Write-Host ''
+        Write-Host '==============================' -ForegroundColor DarkCyan
+        Write-Host '   FS25 AutoDrive Manager     ' -ForegroundColor Cyan
+        Write-Host '==============================' -ForegroundColor DarkCyan
+        Write-Host ' [1] Check local version'
+        Write-Host ' [2] Check latest version'
+        Write-Host ' [3] Compare local vs latest'
+        Write-Host ' [4] Install latest version'
+        Write-Host ' [5] Preview install (WhatIf)'
+        Write-Host ' [6] Remove local mod'
+        Write-Host ' [Q] Quit'
+        Write-Host '------------------------------' -ForegroundColor DarkCyan
+        $choice = Read-Host ' Select an option'
+
+        $normalized = $choice.Trim().ToUpper()
+        if ($normalized -notin @('1', '2', '3', '4', '5', '6', 'Q')) {
+            Write-Host "`n  Invalid option. Please try again." -ForegroundColor Red
+            continue
+        }
+
+        $continue = Invoke-AutoDriveMenuAction -Choice $normalized
+        if (-not $continue) {
+            break
+        }
+    } while ($true)
+
+    Write-Host ''
+}
+
+<#
+.SYNOPSIS
 Displays an interactive menu for managing the FS25 AutoDrive mod.
 
 .DESCRIPTION
-Shows a menu-driven interface that allows users to check local and latest versions,
-compare versions, and install the latest AutoDrive release.
+Shows a keyboard-driven terminal UI with arrow-key navigation and hotkeys.
+Falls back to a standard prompt menu when TUI input is unavailable.
 
 .EXAMPLE
 Show-AutoDriveMenu
@@ -455,65 +595,123 @@ function Show-AutoDriveMenu {
     param()
 
     process {
-        do {
-            Write-Host ''
+        $useLegacyMenu = $false
+        $legacyMenuEnv = $env:AUTODRIVE_USE_LEGACY_MENU
+        if ($legacyMenuEnv) {
+            $normalizedLegacyValue = $legacyMenuEnv.Trim().ToLowerInvariant()
+            if ($normalizedLegacyValue -in @('1', 'true', 'yes', 'on')) {
+                $useLegacyMenu = $true
+            }
+        }
+
+        try {
+            if (-not $useLegacyMenu -and ([Console]::IsInputRedirected -or [Console]::IsOutputRedirected)) {
+                $useLegacyMenu = $true
+            }
+            [void][Console]::CursorVisible
+        }
+        catch {
+            $useLegacyMenu = $true
+        }
+
+        if ($useLegacyMenu) {
+            Show-AutoDriveMenuLegacy
+            return
+        }
+
+        $menuItems = @(
+            [PSCustomObject]@{ Key = '1'; Label = 'Check local version' }
+            [PSCustomObject]@{ Key = '2'; Label = 'Check latest version' }
+            [PSCustomObject]@{ Key = '3'; Label = 'Compare local vs latest' }
+            [PSCustomObject]@{ Key = '4'; Label = 'Install latest version' }
+            [PSCustomObject]@{ Key = '5'; Label = 'Preview install (WhatIf)' }
+            [PSCustomObject]@{ Key = '6'; Label = 'Remove local mod' }
+            [PSCustomObject]@{ Key = 'Q'; Label = 'Quit' }
+        )
+
+        $selectedIndex = 0
+        $isRunning = $true
+
+        try {
+            [Console]::CursorVisible = $false
+        }
+        catch {
+        }
+
+        while ($isRunning) {
+            Clear-Host
             Write-Host '==============================' -ForegroundColor DarkCyan
             Write-Host '   FS25 AutoDrive Manager     ' -ForegroundColor Cyan
             Write-Host '==============================' -ForegroundColor DarkCyan
-            Write-Host ' [1] Check local version'
-            Write-Host ' [2] Check latest version'
-            Write-Host ' [3] Compare local vs latest'
-            Write-Host ' [4] Install latest version'
-            Write-Host ' [5] Preview install (WhatIf)'
-            Write-Host ' [Q] Quit'
-            Write-Host '------------------------------' -ForegroundColor DarkCyan
-            $choice = Read-Host ' Select an option'
+            Write-Host ' Use Up/Down arrows, Enter to select, number hotkeys, Q to quit.' -ForegroundColor Gray
+            Write-Host ''
 
-            switch ($choice.Trim().ToUpper()) {
-                '1' {
-                    $v = Get-LocalAutodriveVersion
-                    if ($v -and $v.IsInstalled) {
-                        Write-Host "`n  Installed Version : $($v.Version)" -ForegroundColor Green
-                        Write-Host "  Mod Path          : $($v.ModPath)" -ForegroundColor Gray
-                    }
-                    else {
-                        Write-Host "`n  AutoDrive is not installed in your mods folder." -ForegroundColor Yellow
-                        Write-Host "  Mods folder: $(Get-FarmingSimulatorModsPath)" -ForegroundColor Gray
-                    }
+            for ($i = 0; $i -lt $menuItems.Count; $i++) {
+                $item = $menuItems[$i]
+                if ($i -eq $selectedIndex) {
+                    Write-Host ("> [$($item.Key)] $($item.Label)") -ForegroundColor Black -BackgroundColor Cyan
                 }
-                '2' {
-                    $v = Get-LatestAutodriveVersion
-                    if ($v) {
-                        Write-Host "`n  Latest Version : $($v.Version)" -ForegroundColor Green
-                        Write-Host "  Released       : $($v.ReleaseDate.ToString('yyyy-MM-dd'))" -ForegroundColor Gray
-                        Write-Host "  Pre-release    : $($v.IsPreRelease)" -ForegroundColor Gray
-                    }
-                }
-                '3' {
-                    $c = Compare-AutodriveVersions
-                    if ($c) {
-                        Write-Host "`n  Local Version  : $($c.LocalVersion)" -ForegroundColor $(if ($c.IsInstalled) { 'White' } else { 'Yellow' })
-                        Write-Host "  Latest Version : $($c.LatestVersion)" -ForegroundColor White
-                        if ($c.UpdateAvailable) {
-                            Write-Host "  Status         : Update available!" -ForegroundColor Yellow
-                        }
-                        else {
-                            Write-Host "  Status         : Up to date" -ForegroundColor Green
-                        }
-                    }
-                }
-                '4' {
-                    Install-AutodriveModVersion
-                }
-                '5' {
-                    Install-AutodriveModVersion -WhatIf
-                }
-                'Q' { }
-                default {
-                    Write-Host "`n  Invalid option. Please try again." -ForegroundColor Red
+                else {
+                    Write-Host ("  [$($item.Key)] $($item.Label)") -ForegroundColor White
                 }
             }
-        } while ($choice.Trim().ToUpper() -ne 'Q')
+
+            $keyInfo = [Console]::ReadKey($true)
+            switch ($keyInfo.Key) {
+                'UpArrow' {
+                    $selectedIndex = ($selectedIndex - 1 + $menuItems.Count) % $menuItems.Count
+                    continue
+                }
+                'DownArrow' {
+                    $selectedIndex = ($selectedIndex + 1) % $menuItems.Count
+                    continue
+                }
+                'Enter' {
+                    $selectedKey = $menuItems[$selectedIndex].Key
+                    Clear-Host
+                    $isRunning = Invoke-AutoDriveMenuAction -Choice $selectedKey
+                    if ($isRunning) {
+                        Write-Host ''
+                        Write-Host ' Press any key to return to the menu...' -ForegroundColor DarkGray
+                        [void][Console]::ReadKey($true)
+                    }
+                    continue
+                }
+                'D1' { $selectedIndex = 0 }
+                'D2' { $selectedIndex = 1 }
+                'D3' { $selectedIndex = 2 }
+                'D4' { $selectedIndex = 3 }
+                'D5' { $selectedIndex = 4 }
+                'D6' { $selectedIndex = 5 }
+                'NumPad1' { $selectedIndex = 0 }
+                'NumPad2' { $selectedIndex = 1 }
+                'NumPad3' { $selectedIndex = 2 }
+                'NumPad4' { $selectedIndex = 3 }
+                'NumPad5' { $selectedIndex = 4 }
+                'NumPad6' { $selectedIndex = 5 }
+                default {
+                    if ($keyInfo.KeyChar -eq 'q' -or $keyInfo.KeyChar -eq 'Q') {
+                        $isRunning = $false
+                        continue
+                    }
+                    continue
+                }
+            }
+
+            Clear-Host
+            $isRunning = Invoke-AutoDriveMenuAction -Choice $menuItems[$selectedIndex].Key
+            if ($isRunning) {
+                Write-Host ''
+                Write-Host ' Press any key to return to the menu...' -ForegroundColor DarkGray
+                [void][Console]::ReadKey($true)
+            }
+        }
+
+        try {
+            [Console]::CursorVisible = $true
+        }
+        catch {
+        }
 
         Write-Host ''
     }

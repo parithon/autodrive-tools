@@ -479,7 +479,7 @@ Describe 'Install-AutodriveModVersion' {
         }
 
         It 'Should return early when not installed' {
-            Install-AutodriveModVersion
+            Install-AutodriveModVersion -Confirm:$false
             Should -Invoke Compare-AutodriveVersions -Exactly 1
         }
     }
@@ -502,7 +502,7 @@ Describe 'Install-AutodriveModVersion' {
         }
 
         It 'Should indicate already up to date' {
-            Install-AutodriveModVersion
+            Install-AutodriveModVersion -Confirm:$false
             Should -Invoke Compare-AutodriveVersions -Exactly 1
         }
     }
@@ -516,13 +516,72 @@ Describe 'Install-AutodriveModVersion' {
         }
 
         It 'Should exit gracefully on comparison failure' {
-            Install-AutodriveModVersion
+            Install-AutodriveModVersion -Confirm:$false
             Should -Invoke Compare-AutodriveVersions -Exactly 1
         }
     }
 }
 
+Describe 'Remove-AutodriveMod' {
+    Context 'When mod is not installed' {
+        BeforeEach {
+            Mock Get-LocalAutodriveVersion {
+                return [PSCustomObject]@{
+                    IsInstalled = $false
+                    Version     = $null
+                    ModPath     = $null
+                    ModDescPath = $null
+                }
+            }
+            Mock Remove-Item
+            Mock Write-Host
+        }
+
+        It 'Should indicate nothing to remove' {
+            Remove-AutodriveMod -Confirm:$false
+            Should -Invoke Get-LocalAutodriveVersion -Exactly 1
+            Should -Invoke Remove-Item -Exactly 0
+        }
+    }
+
+    Context 'When mod is installed' {
+        BeforeEach {
+            Mock Get-LocalAutodriveVersion {
+                return [PSCustomObject]@{
+                    IsInstalled = $true
+                    Version     = [System.Version]'1.5.0'
+                    ModPath     = '/tmp/mods/FS25_AutoDrive.zip'
+                    ModDescPath = '/tmp/mods/FS25_AutoDrive.zip::modDesc.xml'
+                }
+            }
+            Mock Remove-Item
+            Mock Write-Host
+        }
+
+        It 'Should remove the local mod path' {
+            Remove-AutodriveMod -Confirm:$false
+            Should -Invoke Remove-Item -Exactly 1 -ParameterFilter {
+                $Path -eq '/tmp/mods/FS25_AutoDrive.zip' -and $Recurse -and $Force
+            }
+        }
+    }
+}
+
 Describe 'Show-AutoDriveMenu' {
+    BeforeAll {
+        $script:originalLegacyMenuEnv = $env:AUTODRIVE_USE_LEGACY_MENU
+        $env:AUTODRIVE_USE_LEGACY_MENU = '1'
+    }
+
+    AfterAll {
+        if ($null -eq $script:originalLegacyMenuEnv) {
+            Remove-Item Env:AUTODRIVE_USE_LEGACY_MENU -ErrorAction SilentlyContinue
+        }
+        else {
+            $env:AUTODRIVE_USE_LEGACY_MENU = $script:originalLegacyMenuEnv
+        }
+    }
+
     Context 'When user selects quit immediately' {
         BeforeEach {
             Mock Read-Host {
@@ -636,6 +695,26 @@ Describe 'Show-AutoDriveMenu' {
             Should -Invoke Write-Host -ParameterFilter {
                 $Object -like '*Invalid option*'
             }
+        }
+    }
+
+    Context 'When user selects remove local mod' {
+        BeforeEach {
+            Mock Read-Host {
+                if ($callCount -eq 1) {
+                    $script:callCount = 2
+                    return '6'
+                }
+                return 'Q'
+            }
+            Mock Write-Host
+            Mock Remove-AutodriveMod
+            $script:callCount = 1
+        }
+
+        It 'Should call Remove-AutodriveMod' {
+            Show-AutoDriveMenu
+            Should -Invoke Remove-AutodriveMod -Exactly 1
         }
     }
 }

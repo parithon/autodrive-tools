@@ -1,20 +1,63 @@
 <#
 .SYNOPSIS
-Downloads and executes the AutoDrive Core script from GitHub.
+Loads and executes the AutoDrive Core script.
 
 .DESCRIPTION
-This script downloads the latest AutoDrive Core module from the personal GitHub Pages site
-and executes it to display the interactive AutoDrive menu for managing the FS25 AutoDrive mod.
+This bootstrap script first looks for AutoDrive-Core.ps1 in the local script directory.
+If the file is missing, it loads the latest script
+from the GitHub Pages URL directly into the current session.
 
 .EXAMPLE
 .\AutoDrive.ps1
 
 .NOTES
-Requires internet connectivity to download the core script.
+Requires internet connectivity only when local core is unavailable.
 Requires PowerShell 5.1 or later.
 #>
 
 #Requires -Version 5.1
 
-iex (Invoke-RestMethod -Uri 'https://parithon.github.io/autodrive-tools/AutoDrive-Core.ps1')
+[CmdletBinding()]
+param()
+
+$coreScriptPath = Join-Path -Path $PSScriptRoot -ChildPath 'AutoDrive-Core.ps1'
+$coreScriptUri = 'https://parithon.github.io/autodrive-tools/AutoDrive-Core.ps1'
+
+$coreLoaded = $false
+
+if (Test-Path -Path $coreScriptPath -PathType Leaf) {
+	try {
+		Write-Verbose "Loading local core script from: $coreScriptPath"
+		. $coreScriptPath
+		$coreLoaded = $true
+	}
+	catch {
+		Write-Warning "Failed to load local AutoDrive-Core.ps1. Falling back to remote load. Error: $($_.Exception.Message)"
+	}
+}
+
+if (-not $coreLoaded) {
+	$tempCoreScriptPath = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath ("AutoDrive-Core.{0}.ps1" -f $PID)
+	try {
+		Write-Verbose 'Loading latest AutoDrive-Core.ps1 into current session from temporary file...'
+		Invoke-WebRequest -Uri $coreScriptUri -OutFile $tempCoreScriptPath -ErrorAction Stop
+		. $tempCoreScriptPath
+		$coreLoaded = $true
+	}
+	catch {
+		Write-Error "Failed to load AutoDrive-Core.ps1 from remote source: $($_.Exception.Message)"
+		return
+	}
+	finally {
+		if (Test-Path -Path $tempCoreScriptPath -PathType Leaf) {
+			Remove-Item -Path $tempCoreScriptPath -Force -ErrorAction SilentlyContinue
+		}
+	}
+}
+
+if (-not (Get-Command -Name Show-AutoDriveMenu -ErrorAction SilentlyContinue)) {
+	Write-Error 'AutoDrive core script loaded, but Show-AutoDriveMenu function was not found.'
+	return
+}
+
 Show-AutoDriveMenu
