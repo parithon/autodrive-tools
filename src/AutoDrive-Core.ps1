@@ -210,7 +210,58 @@ function Get-LocalAutodriveVersion {
                     Write-Verbose "Found AutoDrive mod at: $modDescPath"
                 }
                 else {
-                    Write-Verbose 'AutoDrive mod not found in mods directory'
+                    Write-Verbose 'No extracted AutoDrive mod found, searching zip archives'
+
+                    try {
+                        Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+                    }
+                    catch {
+                        Write-Verbose 'System.IO.Compression.FileSystem assembly already loaded or unavailable'
+                    }
+
+                    $zipCandidates = Get-ChildItem -Path $modsPath -Filter '*.zip' -File -ErrorAction SilentlyContinue |
+                        Sort-Object LastWriteTime -Descending
+
+                    foreach ($zip in $zipCandidates) {
+                        $archive = $null
+                        $entry = $null
+                        $reader = $null
+
+                        try {
+                            $archive = [System.IO.Compression.ZipFile]::OpenRead($zip.FullName)
+                            $entry = $archive.Entries |
+                                Where-Object { $_.FullName -match '(^|/)modDesc\.xml$' } |
+                                Select-Object -First 1
+
+                            if (-not $entry) {
+                                continue
+                            }
+
+                            $reader = [System.IO.StreamReader]::new($entry.Open())
+                            [xml]$zipXml = $reader.ReadToEnd()
+                            $titleNode = $zipXml.SelectSingleNode('/modDesc/title/en')
+
+                            if ($titleNode -and $titleNode.InnerText -match 'AutoDrive') {
+                                $modVersion = [System.Version]$zipXml.modDesc.version
+                                Write-Verbose "Found AutoDrive zip mod: $($zip.FullName)"
+                                return [PSCustomObject]@{
+                                    IsInstalled = $true
+                                    Version     = $modVersion
+                                    ModPath     = $zip.FullName
+                                    ModDescPath = "$($zip.FullName)::${entry.FullName}"
+                                }
+                            }
+                        }
+                        catch {
+                            Write-Verbose "Skipping unreadable zip '$($zip.FullName)': $($_.Exception.Message)"
+                        }
+                        finally {
+                            if ($reader) { $reader.Dispose() }
+                            if ($archive) { $archive.Dispose() }
+                        }
+                    }
+
+                    Write-Verbose 'AutoDrive mod not found in extracted folders or zip archives'
                     return [PSCustomObject]@{
                         IsInstalled = $false
                         Version     = $null
@@ -341,6 +392,11 @@ function Update-AutodriveModVersion {
         $timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
         $backupPath = Join-Path -Path $modsPath -ChildPath "FS25_AutoDrive_backup_$timestamp"
         $zipPath = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath "FS25_AutoDrive_$($latest.Version).zip"
+        $installZipPath = Join-Path -Path $modsPath -ChildPath 'FS25_AutoDrive.zip'
+
+        if (Test-Path -Path $local.ModPath -PathType Leaf) {
+            $backupPath = "$backupPath.zip"
+        }
 
         if ($PSCmdlet.ShouldProcess('AutoDrive', 'Update to latest version')) {
             try {
@@ -354,8 +410,11 @@ function Update-AutodriveModVersion {
                 Write-Host '  Removing old version...' -ForegroundColor Cyan
                 Remove-Item -Path $local.ModPath -Recurse -Force -ErrorAction Stop
 
-                Write-Host '  Installing new version...' -ForegroundColor Cyan
-                Expand-Archive -Path $zipPath -DestinationPath $modsPath -Force -ErrorAction Stop
+                Write-Host '  Installing new version as zip...' -ForegroundColor Cyan
+                if (Test-Path -Path $installZipPath) {
+                    Remove-Item -Path $installZipPath -Force -ErrorAction Stop
+                }
+                Move-Item -Path $zipPath -Destination $installZipPath -Force -ErrorAction Stop
 
                 Remove-Item -Path $zipPath -Force -ErrorAction SilentlyContinue
 
@@ -366,6 +425,9 @@ function Update-AutodriveModVersion {
                 Write-Error "Update failed: $_"
                 if (Test-Path -Path $backupPath) {
                     Write-Host '  Restoring backup...' -ForegroundColor Yellow
+                    if (Test-Path -Path $installZipPath) {
+                        Remove-Item -Path $installZipPath -Recurse -Force -ErrorAction SilentlyContinue
+                    }
                     if (Test-Path -Path $local.ModPath) {
                         Remove-Item -Path $local.ModPath -Recurse -Force -ErrorAction SilentlyContinue
                     }
